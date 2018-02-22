@@ -222,6 +222,8 @@ FUNCTION New-Dell_SC_Cfg() {
 # *************************************************************************** HELPING FUNCTIONS **************************************************************************
 # ************************************************************************************************************************************************************************
 
+# Reading user's inputs (numerical based Q&As)
+
 FUNCTION Dell_Read_Input() {
     param ([string] $question, [int] $min_val, [int] $max_val, [int] $default)  # NOTE: "min_val" must be greater than zero!!!
 
@@ -234,6 +236,9 @@ FUNCTION Dell_Read_Input() {
 
     RETURN $choice
 }
+
+
+# Check if the Load Balancing value read from the config file is the recommended value for that type of FE connection
 
 FUNCTION Dell_LBP_Verification() {
     param ([string] $type)
@@ -253,6 +258,9 @@ FUNCTION Dell_LBP_Verification() {
     Write-Host $script:txt_gen_ok $script:txt_lbp $script:lbp_type -ForegroundColor $script:ok_color
 }
 
+
+# HotFix verification - check if it is installed, given a KB number
+
 FUNCTION Dell_HF_Verification() {
     param([string] $kbn)
     TRY {
@@ -262,6 +270,9 @@ FUNCTION Dell_HF_Verification() {
       Write-Host "`n$kbn is $script:txt_chk_inst_err" -ForegroundColor $script:war_color
     }
 }
+
+
+# Windows Registry Verification - check if the value at the specific path is set to the given value
 
 FUNCTION Dell_REG_Verification() {
   param ([string]$path, [string]$name, [string]$value)
@@ -290,6 +301,8 @@ FUNCTION Dell_REG_Verification() {
 # **************************************************************************** INPUT FUNCTIONS ***************************************************************************
 # ************************************************************************************************************************************************************************
 
+# Ask users to input the specific FE type in use for this environment
+
 FUNCTION Dell_Read_FE() {
     $fe_type = $(Dell_Read_Input ("$script:txt_which_fe $script:txt_fe_types $script:txt_choose")(1)(3))
     SWITCH ($fe_type) {
@@ -308,6 +321,8 @@ FUNCTION Dell_Read_FE() {
 # ************************************************************************************************************************************************************************
 # **************************************************************************** CHECK FUNCTIONS ***************************************************************************
 # ************************************************************************************************************************************************************************
+
+# Verify that MPIO is Installed
 
 FUNCTION Dell_Check_MPIO() {
     IF ((Get-WindowsOptionalFeature -Online -FeatureName MultipathIO).State -like "Disabled") {
@@ -331,6 +346,9 @@ FUNCTION Dell_Check_MPIO() {
     }
 }
 
+
+# Check Microsoft Device-Specific Module if it contains the corrent entry for SC Series devices
+
 FUNCTION Dell_Check_SCMSDSM() {
     TRY {
       $null = $(Get-MSDSMSupportedHW -VendorId COMPELNT -ProductID "Compellent Vol" -ErrorAction Stop)
@@ -351,6 +369,9 @@ FUNCTION Dell_Check_SCMSDSM() {
       }
     }
 }
+
+
+# List of Hot Fixes to check based on the Windows version in use
 
 FUNCTION Dell_Check_HF() {
     SWITCH -wildcard ($script:win_version) {
@@ -374,6 +395,10 @@ FUNCTION Dell_Check_HF() {
             break }
     }
 }
+
+
+# List of params to check (as well as their path and Best Practices values)
+# NOTE: hybrid PS / SC Series environment is out of the scope of this script for now, but it will implemented within the next releases.
 
 FUNCTION Dell_Check_REG() {
     Dell_REG_Verification($script:regpath_mpio)("PDORemovePeriod")("120")                   # Default = 20 | Shared EQL/CML = 120 (Required)
@@ -429,6 +454,9 @@ FUNCTION Dell_Check_REG() {
     }
 }
 
+
+# Verify that RFC timestamps settings has been enabled on this system
+
 FUNCTION Dell_Check_PAWS() {
     IF ($(netsh int tcp show global store=persistent | find "RFC 1323 Timestamps").substring(38) -like "disabled") {
       IF($script:auto_run) {
@@ -453,9 +481,14 @@ FUNCTION Dell_Check_PAWS() {
 # **************************************************************************** FIXES FUNCTIONS ***************************************************************************
 # ************************************************************************************************************************************************************************
 
+#Enable MPIO if not enabled (REBOOT IS REQUIRED)
+
 FUNCTION Dell_Fix_MPIO() {
     Enable-WindowsOptionalFeature -Online -FeatureName MultiPathIO
 }
+
+
+# Create an entry for SC Series model in the MS Device-Specific Module (reboot required to have it applied)
 
 FUNCTION Dell_Fix_SCMSDSM() {
     New-MSDSMSupportedHW -VendorId COMPELNT -ProductID "Compellent Vol"
@@ -463,12 +496,18 @@ FUNCTION Dell_Fix_SCMSDSM() {
     Dell_Check_SCMSDSM
 }
 
+
+# Fix a specific Windows Registy value for a entry of a given name in a given path
+
 FUNCTION Dell_Fix_REG() {
     param ([string]$path, [string]$name, [string]$value)
 
     Set-ItemProperty -Path $path -Name $name -Value $value -Type DWord # -ErrorAction SilentlyContinue
     Dell_REG_Verification($path)($name)($value)
 }
+
+
+# Enable RFC timestamps settings if not enabled
 
 FUNCTION Dell_Fix_PAWS() {
     netsh int tcp set global timestamps=enabled
