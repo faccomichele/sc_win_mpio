@@ -1,0 +1,6 @@
+{
+    "FrontEnd":  "FC",
+    "LBPolicy":  "RR",
+    "AutoExec":  true,
+    "CheckOnly":  true
+}
