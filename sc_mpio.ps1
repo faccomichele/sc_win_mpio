@@ -1,5 +1,5 @@
 #Author: Michele Facco
-#Date: 22-Feb-2018
+#Date: 02-Mar-2018
 #Project: https://github.com/faccomichele/sc_win_mpio.git
 
 # Based on: http://en.community.dell.com/techcenter/extras/m/white_papers/20437917/download
@@ -20,21 +20,24 @@ $script:ok_color = "green"    # Green Color - NOTIFICATIONS
 # ************************************************************************************************************************************************************************
 
 # Default Values to be set...
-$script:conf_file = "cfg.json"  # Configuration File which is empty by default
-$script:auto_run_delay = 10     # Seconds of delay before running the script in unattended mode
+$script:conf_file = "cfg.json"                # Configuration File which is empty by default
+$script:auto_run_delay = 10                   # Seconds of delay before running the script in unattended mode
+$script:dc_custom_name = "DatacenterCustom"   # Customer profile name for DelayACK disabled profile
+$script:iscsi_port = "3260"                   # iSCSI port number
 
-$script:regpath_mpio = "HKLM:\SYSTEM\CurrentControlSet\Services\mpio\Parameters"                                              # Registry path for MPIO settings
-$script:regpath_disk = "HKLM:\SYSTEM\CurrentControlSet\Services\disk"                                                         # Registry path for disks settings
-$script:regpath_iscsi = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e97b-e325-11ce-bfc1-08002be10318}\0002\Parameters" # Registry path for iSCSI settings - MS iSCSI Software Initiator
+$script:regpath_mpio = "HKLM:\SYSTEM\CurrentControlSet\Services\mpio\Parameters"                                                # Registry path for MPIO settings
+$script:regpath_disk = "HKLM:\SYSTEM\CurrentControlSet\Services\disk"                                                           # Registry path for disks settings
+$script:regpath_iscsi = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e97b-e325-11ce-bfc1-08002be10318}\0002\Parameters"   # Registry path for iSCSI settings - MS iSCSI Software Initiator
+# DriverDesc = Microsoft iSCSI Initiator
 
 # No defaults...
-$script:creds        # Credentials used to connect to a remote host
-$script:sess         # Session created with a remote host
-$script:fe_conn_type # Front-End connectivity type { SAS (1) - FC (2) - iSCSI (3) }
-$script:lbp_type     # Load-Balancing Policy type { RR (Round Robin) - LQB (Least Queue Depth) }
-$script:win_version  # Version of MS Windows OS
-$script:auto_run     # Auto run the script with the settings found in the config file { True (1 - Enabled) - False (2 - Disabled) }
-$script:chk_only     # Runs only checks, do not fix any settings even if it is wrong { True (1 - Enabled) - False (2 - Disabled) }
+$script:creds           # Credentials used to connect to a remote host
+$script:sess            # Session created with a remote host
+$script:fe_conn_type    # Front-End connectivity type { SAS (1) - FC (2) - iSCSI (3) }
+$script:lbp_type        # Load-Balancing Policy type { RR (Round Robin) - LQB (Least Queue Depth) }
+$script:win_version     # Version of MS Windows OS
+$script:auto_run        # Auto run the script with the settings found in the config file { True (1 - Enabled) - False (2 - Disabled) }
+$script:chk_only        # Runs only checks, do not fix any settings even if it is wrong { True (1 - Enabled) - False (2 - Disabled) }
 
 # ************************************************************************************************************************************************************************
 # ****************************************************************************** SENTENCES *******************************************************************************
@@ -79,9 +82,14 @@ $script:txt_reg_check = "`nWindows Registry Check:"
 $script:txt_reg_while = "while it should be set to"
 $script:txt_reg_fix = "`nDo you want to fix this value, now?`n"
 $script:txt_paws = "`nRFC 1323 Timestamps is"
-$script:txt_chk_en = "Enabled             --->  OK"
-$script:txt_chk_dis = "Disabled            --->  ERROR"
+$script:txt_chk_en_ok = "Enabled             --->  OK"
+$script:txt_chk_dis_err = "Disabled            --->  ERROR"
+$script:txt_chk_en_err = "Enabled             --->  ERROR"
+$script:txt_chk_dis_ok = "Disabled            --->  OK"
 $script:txt_enable_it = "Disabled! Do you want to enable it, now?`n"
+$script:txt_disable_it = "Enabled! Do you want to disable it, now?`n"
+$script:txt_ack = "`nTCP Delay ACK is"
+$script:txt_cus_pro = "`nCustom Profile '$script:dc_custom_name' is"
 
 # ************************************************************************************************************************************************************************
 # ********************************************************************************* MAIN *********************************************************************************
@@ -90,7 +98,6 @@ $script:txt_enable_it = "Disabled! Do you want to enable it, now?`n"
 FUNCTION Dell_Script_Main() {
 
     # (1) Check for an existing configuration file
-
     IF (Test-Path -Path $script:conf_file) {
       $cfg_imp_obj = Get-Content $script:conf_file -Raw | ConvertFrom-Json
       $script:fe_conn_type = $cfg_imp_obj.FrontEnd
@@ -101,7 +108,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (2) Automatic script execution option. If this option is present in the config file, the script will apply all the settings in unattended mode.
-
     IF ($script:auto_run){
       Write-Host $script:txt_gen_war $script:txt_auto_run -ForegroundColor $script:war_color
       IF (-not $script:chk_only){
@@ -113,7 +119,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (3) Define which Front-End is in use
-
     IF (($script:fe_conn_type -like "SAS") -or ($script:fe_conn_type -like "FC") -or ($script:fe_conn_type -like "iSCSI")){
       IF (-not $script:auto_run){
         IF ($(Dell_Read_Input("$script:txt_curr_using $fe_conn_type $script:txt_as_fe $script:txt_keep_it $script:txt_yes_no $script:txt_choose $script:txt_def_no")(1)(2)(2)) -eq 1){
@@ -132,7 +137,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (4) Select / Verify Load-Balancing Policy depending on the current FE
-
     SWITCH ($script:fe_conn_type) {
         "SAS" {
             Dell_LBP_Verification("LQD")
@@ -146,7 +150,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (5) Chance to export the above configurations to an external file
-
     IF (-not $script:auto_run){
       IF ($(Dell_Read_Input("$script:txt_export $script:txt_yes_no $script:txt_choose $script:txt_def_yes")(1)(2)(1)) -eq 1){
         IF ($(Dell_Read_Input("$script:txt_auto_on $script:txt_yes_no $script:txt_choose $script:txt_def_no")(1)(2)(2)) -eq 1){
@@ -165,7 +168,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (6) Define which version of MS Windows OS is in use on this system
-
     $win_ver_name = (Get-WmiObject -Class Win32_OperatingSystem | ForEach-Object -MemberName Caption)
     SWITCH -wildcard ($win_ver_name) {
         "Microsoft Windows Server 2016*" {
@@ -186,7 +188,6 @@ FUNCTION Dell_Script_Main() {
     }
 
     # (7) Run checks (and fixes, if needed)
-
     Dell_Check_MPIO
     Dell_Check_SCMSDSM
     # Dell-LBP
@@ -194,10 +195,9 @@ FUNCTION Dell_Script_Main() {
     Dell_Check_REG
 
     # (8) Run additonal checks for iSCSI only (and fixes, if needed)
-
     IF ($script:fe_conn_type -like "iSCSI") {
-      Dell_Check_PAWS
-      # Dell_Check_DelayACK
+      # Dell_Check_PAWS # obsolete function for 2008r2 and 2012 only
+      Dell_Check_DelayACK
     }
 }
 
@@ -223,7 +223,6 @@ FUNCTION New-Dell_SC_Cfg() {
 # ************************************************************************************************************************************************************************
 
 # Reading user's inputs (numerical based Q&As)
-
 FUNCTION Dell_Read_Input() {
     param ([string] $question, [int] $min_val, [int] $max_val, [int] $default)  # NOTE: "min_val" must be greater than zero!!!
 
@@ -239,7 +238,6 @@ FUNCTION Dell_Read_Input() {
 
 
 # Check if the Load Balancing value read from the config file is the recommended value for that type of FE connection
-
 FUNCTION Dell_LBP_Verification() {
     param ([string] $type)
 
@@ -260,7 +258,6 @@ FUNCTION Dell_LBP_Verification() {
 
 
 # HotFix verification - check if it is installed, given a KB number
-
 FUNCTION Dell_HF_Verification() {
     param([string] $kbn)
     TRY {
@@ -273,7 +270,6 @@ FUNCTION Dell_HF_Verification() {
 
 
 # Windows Registry Verification - check if the value at the specific path is set to the given value
-
 FUNCTION Dell_REG_Verification() {
   param ([string]$path, [string]$name, [string]$value)
   $current_value = (Get-ItemProperty -Path "$path" -Name "$name" -ErrorAction Stop).($name)
@@ -297,12 +293,85 @@ FUNCTION Dell_REG_Verification() {
   }
 }
 
+
+# Check that DelayACK is set to 1 / disabled for the given profile
+FUNCTION Dell_DelayACK_Value_Verification() {
+    $current_value_ack = [int] $(Get-NetTcpSetting -SettingName $script:dc_custom_name).DelayedAckFrequency
+    $current_value_paws = $(Get-NetTcpSetting -SettingName $script:dc_custom_name).Timestamps
+    IF (($current_value -ne 1) -or ($current_value_paws -like "Disabled")){
+      IF ($script:auto_run) {
+        IF ($script:chk_only) {
+          IF ($current_value -ne 1){
+            IF ($current_value_paws -like "Disabled") {
+              Write-Host $script:txt_ack $script:txt_chk_en_err $script:txt_paws $script:txt_chk_dis_err -ForegroundColor $script:war_color
+            } ELSE {
+              Write-Host $script:txt_ack $script:txt_chk_en_err -ForegroundColor $script:war_color
+              Write-Host $script:txt_paws $script:txt_chk_en_ok -ForegroundColor $script:ok_color
+            }
+          } ELSE {
+            Write-Host $script:txt_ack $script:txt_chk_dis_ok -ForegroundColor $script:ok_color
+            Write-Host $script:txt_paws $script:txt_chk_dis_err -ForegroundColor $script:war_color
+          }
+        } ELSE {
+          Dell_Fix_DelayACK_Value
+        }
+      } ELSE {
+        $question = ""
+        $report = ""
+        IF ($current_value -ne 1){
+          IF ($current_value_paws -like "Disabled") {
+            $question = "$script:txt_ack $script:txt_disable_it $script:txt_paws $script:txt_enable_it"
+            $report = "$script:txt_ack $script:txt_chk_en_err $script:txt_paws $script:txt_chk_dis_err"
+          } ELSE {
+            Write-Host $script:txt_paws $script:txt_chk_en_ok -ForegroundColor $script:ok_color
+            $question = "$script:txt_ack $script:txt_disable_it"
+            $report = "$script:txt_ack $script:txt_chk_en_err"
+          }
+        } ELSE {
+          Write-Host $script:txt_ack $script:txt_chk_dis_ok -ForegroundColor $script:ok_color
+          $question = "$script:txt_paws $script:txt_enable_it"
+          $report = "$script:txt_paws $script:txt_chk_dis_err"
+        }
+        $question = "$question $script:txt_yes_no $script:txt_choose $script:txt_def_yes"
+        IF ($(Dell_Read_Input($question)(1)(2)(1)) -eq 1){
+          Dell_Fix_DelayACK_Value
+        } ELSE {
+          Write-Host $report -ForegroundColor $script:war_color
+        }
+      }
+    } ELSE {
+      Write-Host $script:txt_ack $script:txt_chk_dis_ok $script:txt_paws $script:txt_chk_en_ok -ForegroundColor $script:ok_color
+    }
+}
+
+
+# Verify the given profile is associated to the iSCSI connections
+FUNCTION Dell_DelayACK_Profile_Verification() {
+    TRY {
+      $current_profile = $(Get-NetTransportFilter -SettingName $script:dc_custom_name)
+      Write-Host "$script:txt_cus_pro $script:txt_chk_en_ok `n $current_profile" -ForegroundColor $script:ok_color
+    } CATCH {
+    IF ($script:auto_run) {
+      IF ($script:chk_only) {
+        Write-Host $script:txt_cus_pro $script:txt_chk_dis_err -ForegroundColor $script:war_color
+      } ELSE {
+        Dell_Fix_DelayACK_Profile
+      }
+    } ELSE {
+      IF ($(Dell_Read_Input("$script:txt_cus_pro $script:txt_enable_it $script:txt_yes_no $script:txt_choose $script:txt_def_yes")(1)(2)(1)) -eq 1){
+        Dell_Fix_DelayACK_Profile
+      } ELSE {
+        Write-Host $script:txt_cus_pro $script:txt_chk_dis_err -ForegroundColor $script:war_color
+      }
+    }
+  }
+}
+
 # ************************************************************************************************************************************************************************
 # **************************************************************************** INPUT FUNCTIONS ***************************************************************************
 # ************************************************************************************************************************************************************************
 
 # Ask users to input the specific FE type in use for this environment
-
 FUNCTION Dell_Read_FE() {
     $fe_type = $(Dell_Read_Input ("$script:txt_which_fe $script:txt_fe_types $script:txt_choose")(1)(3))
     SWITCH ($fe_type) {
@@ -323,7 +392,6 @@ FUNCTION Dell_Read_FE() {
 # ************************************************************************************************************************************************************************
 
 # Verify that MPIO is Installed
-
 FUNCTION Dell_Check_MPIO() {
     IF ((Get-WindowsOptionalFeature -Online -FeatureName MultipathIO).State -like "Disabled") {
       IF ($script:auto_run) {
@@ -348,7 +416,6 @@ FUNCTION Dell_Check_MPIO() {
 
 
 # Check Microsoft Device-Specific Module if it contains the corrent entry for SC Series devices
-
 FUNCTION Dell_Check_SCMSDSM() {
     TRY {
       $null = $(Get-MSDSMSupportedHW -VendorId COMPELNT -ProductID "Compellent Vol" -ErrorAction Stop)
@@ -372,7 +439,6 @@ FUNCTION Dell_Check_SCMSDSM() {
 
 
 # List of Hot Fixes to check based on the Windows version in use
-
 FUNCTION Dell_Check_HF() {
     SWITCH -wildcard ($script:win_version) {
         "W2016" {
@@ -398,8 +464,7 @@ FUNCTION Dell_Check_HF() {
 
 
 # List of params to check (as well as their path and Best Practices values)
-# NOTE: hybrid PS / SC Series environment is out of the scope of this script for now, but it will implemented within the next releases.
-
+# WARNING: hybrid PS / SC Series environment is out of the scope of this script for now, but it will implemented within the next releases.
 FUNCTION Dell_Check_REG() {
     Dell_REG_Verification($script:regpath_mpio)("PDORemovePeriod")("120")                   # Default = 20 | Shared EQL/CML = 120 (Required)
     Dell_REG_Verification($script:regpath_mpio)("PathRecoveryInterval")("25")               # Default = 40 | Shared EQL/CML = 60 (Required)
@@ -455,13 +520,12 @@ FUNCTION Dell_Check_REG() {
 }
 
 
-# Verify that RFC timestamps settings has been enabled on this system
-
+# Verify that RFC timestamps settings has been enabled on this system, obsolete check
 FUNCTION Dell_Check_PAWS() {
     IF ($(netsh int tcp show global store=persistent | find "RFC 1323 Timestamps").substring(38) -like "disabled") {
       IF($script:auto_run) {
         IF ($script:chk_only) {
-          Write-Host $script:txt_paws $script:txt_chk_dis -ForegroundColor $script:war_color
+          Write-Host $script:txt_paws $script:txt_chk_dis_err -ForegroundColor $script:war_color
         } ELSE {
           Dell_Fix_PAWS
         }
@@ -469,12 +533,19 @@ FUNCTION Dell_Check_PAWS() {
         IF ($(Dell_Read_Input("$script:txt_paws $script:txt_enable_it $script:txt_yes_no $script:txt_choose $script:txt_def_yes")(1)(2)(1)) -eq 1){
           Dell_Fix_PAWS
         } ELSE {
-          Write-Host $script:txt_paws $script:txt_chk_dis -ForegroundColor $script:war_color
+          Write-Host $script:txt_paws $script:txt_chk_dis_err -ForegroundColor $script:war_color
         }
       }
     } ELSE {
-      Write-Host $script:txt_paws $script:txt_chk_en -ForegroundColor $script:ok_color
+      Write-Host $script:txt_paws $script:txt_chk_en_ok -ForegroundColor $script:ok_color
     }
+}
+
+
+# Verify that DelayACK is set to false (frequency = 1) and that this specific profile is ENABLED, Also check PAWS on the new system
+FUNCTION Dell_Check_DelayACK() {
+    Dell_DelayACK_Value_Verification
+    Dell_DelayACK_Profile_Verification
 }
 
 # ************************************************************************************************************************************************************************
@@ -482,14 +553,12 @@ FUNCTION Dell_Check_PAWS() {
 # ************************************************************************************************************************************************************************
 
 #Enable MPIO if not enabled (REBOOT IS REQUIRED)
-
 FUNCTION Dell_Fix_MPIO() {
     Enable-WindowsOptionalFeature -Online -FeatureName MultiPathIO
 }
 
 
 # Create an entry for SC Series model in the MS Device-Specific Module (reboot required to have it applied)
-
 FUNCTION Dell_Fix_SCMSDSM() {
     New-MSDSMSupportedHW -VendorId COMPELNT -ProductID "Compellent Vol"
     Update-MPIOClaimedHW -Confirm:$false
@@ -498,7 +567,6 @@ FUNCTION Dell_Fix_SCMSDSM() {
 
 
 # Fix a specific Windows Registy value for a entry of a given name in a given path
-
 FUNCTION Dell_Fix_REG() {
     param ([string]$path, [string]$name, [string]$value)
 
@@ -508,11 +576,39 @@ FUNCTION Dell_Fix_REG() {
 
 
 # Enable RFC timestamps settings if not enabled
-
 FUNCTION Dell_Fix_PAWS() {
     netsh int tcp set global timestamps=enabled
     Dell_Check_PAWS
 }
+
+
+# Set DelayACK to 1 / disabled for the given profile
+FUNCTION Dell_Fix_DelayACK_Value() {
+    Set-NetTcpSetting -SettingName $script:dc_custom_name -DelayedAckFrequency 1
+    Set-NetTcpSetting -SettingName $script:dc_custom_name -Timestamps Enabled
+    Dell_DelayACK_Value_Verification
+}
+
+
+# Associate the given profile name to the iSCSI connections
+FUNCTION Dell_Fix_DelayACK_Profile() {
+    New-NetTransportFilter -SettingName $script:dc_custom_name -LocalPortStart 0 -LocalPortEnd 65535 -RemotePortStart $script:iscsi_port -RemotePortEnd $script:iscsi_port
+    Dell_DelayACK_Profile_Verification
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # page 33 is missing and must be implemented
 # Note: A reboot is required for any registry changes to take effect. Alternatively, unloading and reloading the initiator driver will also cause the change to take effect. In the Device Manager GUI, look under Storage controllers, right-click Microsoft iSCSI Initiator, and select Disable to unload the driver. Then select Enable to reload the driver.
@@ -531,17 +627,6 @@ FUNCTION Dell_Fix_PAWS() {
 # Value to disable:
 #1
 
-FUNCTION Dell_Fix_DelayACK() {
-  Set-NetTCPSetting -SettingName DatacenterCustom -DelayedAckFrequency 1 # create a profile with the right settings
-  Get-NetTCPSetting -SettingName DatacenterCustom # check it
-  Get-NetTransportFilter  # look for destination prefix = *
-  New-NetTransportFilter # with settings name = DatacenterCustom
-  New-NetTransportFilter -SettingName DatacenterCustom -LocalPortStart 0 -LocalPortEnd 65535 -RemotePortStart 3260 -RemotePortEnd 3260
-  # (Optional) associate this profile to the iSCSI NIC(s) only with the commands:
-  # New-NetTransportFilter -SettingName DatacenterCustom -DestinationPrefix <iSCSI IP>/<Subnet>
-  Get-NetTransportFilter # check everything is fine now
-}
-
 # Load Balancing Policy
 # Dell Storage Center OS (SCOS) 6.5 and earlier: round robin (default) and failover only
 # SCOS 6.6 and later: round robin (default), failover only, and least queue depth
@@ -551,5 +636,20 @@ FUNCTION Dell_Fix_DelayACK() {
 # MPCLAIM can be used also for per-volume basis
 
 #For a shared PS Series and SC Series Windows host, it is recommended that Jumbo frames and flow control be enabled for both the Broadcom 57810 and the Intel® X520. If not using the Broadcom iSCSI Offload Engine, receive and transmit buffers should also be maximized.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Dell_Script_Main
